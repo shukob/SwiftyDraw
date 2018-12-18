@@ -194,7 +194,7 @@ open class SwiftyDrawView: UIView {
     
     private func setTouchPoints(_ touch: UITouch,view: UIView) {
         previousPoint = touch.previousLocation(in: view)
-        previousPreviousPoint = touch.previousLocation(in: view)
+        previousPreviousPoint = touch.location(in: view)
         currentPoint = touch.location(in: view)
     }
     
