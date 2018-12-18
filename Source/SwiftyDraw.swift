@@ -75,10 +75,16 @@ open class SwiftyDrawView: UIView {
     public struct Line {
         public var path: CGMutablePath
         public var brush: Brush
+        public var lastEndpoint: CGPoint?
+        public var isFirstMove = true
         
         init(path: CGMutablePath, brush: Brush) {
             self.path = path
             self.brush = brush
+        }
+        
+        func addPath(path: CGPath){
+            self.path.addPath(path)
         }
     }
     
@@ -110,7 +116,7 @@ open class SwiftyDrawView: UIView {
             context.strokePath()
         }
     }
-
+    
     /// touchesBegan implementation to capture strokes
     override open func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = touches.first else { return }
@@ -120,8 +126,10 @@ open class SwiftyDrawView: UIView {
         delegate?.swiftyDraw(didBeginDrawingIn: self, using: touch)
         
         setTouchPoints(touch, view: self)
-        let newLine = Line(path: CGMutablePath(), brush: Brush(color: brush.color, width: brush.width, opacity: brush.opacity, blendMode: brush.blendMode))
-        newLine.path.addPath(createNewPath())
+        var newLine = Line(path: CGMutablePath(), brush: Brush(color: brush.color, width: brush.width, opacity: brush.opacity, blendMode: brush.blendMode))
+        let (path, lastEndpoint) = createNewPath()
+        newLine.path.addPath(path)
+        newLine.lastEndpoint = lastEndpoint
         lines.append(newLine)
         drawingHistory = lines // adding a new line should also update history
     }
@@ -131,11 +139,22 @@ open class SwiftyDrawView: UIView {
         guard isEnabled else { return }
         guard let touch = touches.first else { return }
         delegate?.swiftyDraw(isDrawingIn: self, using: touch)
-        
         updateTouchPoints(for: touch, in: self)
-        let newLine = createNewPath()
-        if let currentPath = lines.last {
+        if var path = lines.last, let endpoint = path.lastEndpoint, lines.last?.isFirstMove == true{
+            //TODO add lastEndpoint = previous
+            let midPoints = getMidPoints(currentPoint: previousPoint, previousPoint: previousPreviousPoint, previousPreviousPoint: endpoint)
+            let subPath = createSubPath(midPoints.0, mid2: midPoints.1)
+            let newPath = addSubPathToPath(subPath)
+            path.path.addPath(newPath)
+            lines.removeLast()
+            path.isFirstMove = false
+            lines.append(path)
+            print("fixing")
+        }
+        let (newLine, endpoint) = createNewPath()
+        if var currentPath = lines.last {
             currentPath.path.addPath(newLine)
+            currentPath.lastEndpoint = endpoint
         }
     }
     
@@ -190,32 +209,34 @@ open class SwiftyDrawView: UIView {
         setNeedsDisplay()
     }
     
-/********************************** Private Functions **********************************/
+    /********************************** Private Functions **********************************/
     
     private func setTouchPoints(_ touch: UITouch,view: UIView) {
+        //        print("set - current: \(touch.location(in: view)) previouse: \(touch.previousLocation(in: view))")
         previousPoint = touch.previousLocation(in: view)
-        previousPreviousPoint = touch.location(in: view)
+        previousPreviousPoint = touch.previousLocation(in: view)
         currentPoint = touch.location(in: view)
     }
     
     private func updateTouchPoints(for touch: UITouch,in view: UIView) {
+        //        print("update - current: \(touch.location(in: view)) previouse: \(touch.previousLocation(in: view))")
         previousPreviousPoint = previousPoint
         previousPoint = touch.previousLocation(in: view)
         currentPoint = touch.location(in: view)
     }
     
-    private func createNewPath() -> CGMutablePath {
-        let midPoints = getMidPoints()
+    private func createNewPath() -> (CGMutablePath, CGPoint){
+        let midPoints = getMidPoints(currentPoint: currentPoint, previousPoint: previousPoint, previousPreviousPoint: previousPreviousPoint)
         let subPath = createSubPath(midPoints.0, mid2: midPoints.1)
         let newPath = addSubPathToPath(subPath)
-        return newPath
+        return (newPath, midPoints.1)
     }
     
     private func calculateMidPoint(_ p1 : CGPoint, p2 : CGPoint) -> CGPoint {
         return CGPoint(x: (p1.x + p2.x) * 0.5, y: (p1.y + p2.y) * 0.5);
     }
     
-    private func getMidPoints() -> (CGPoint,  CGPoint) {
+    private func getMidPoints(currentPoint: CGPoint, previousPoint: CGPoint, previousPreviousPoint: CGPoint) -> (CGPoint,  CGPoint) {
         let mid1 : CGPoint = calculateMidPoint(previousPoint, p2: previousPreviousPoint)
         let mid2 : CGPoint = calculateMidPoint(currentPoint, p2: previousPoint)
         return (mid1, mid2)
